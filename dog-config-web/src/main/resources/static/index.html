@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Config 管理后台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f6fa; color: #2d3436; }
+        .header { background: #2c3e50; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .container { display: flex; gap: 20px; padding: 20px; align-items: flex-start; }
+        .sidebar { width: 220px; flex-shrink: 0; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); overflow: hidden; }
+        .sidebar .new-page { padding: 12px; border-bottom: 1px solid #eee; }
+        .sidebar .new-page input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; font-size: 13px; }
+        .sidebar ul { list-style: none; }
+        .sidebar li { padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f5f5f5; font-size: 14px; }
+        .sidebar li:hover { background: #f0f4ff; }
+        .sidebar li.active { background: #3498db; color: #fff; }
+        .sidebar li .desc { font-size: 11px; color: #999; margin-top: 2px; }
+        .sidebar li.active .desc { color: #dfe6e9; }
+        .main { flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); padding: 24px; min-height: 400px; }
+        .main h2 { font-size: 18px; margin-bottom: 16px; }
+        .group { margin-bottom: 24px; }
+        .group h3 { font-size: 15px; color: #3498db; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 12px; }
+        .item-row { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid #f5f5f5; font-size: 14px; flex-wrap: wrap; }
+        .item-row .name { width: 200px; }
+        .item-row .name .key { display: block; font-size: 11px; color: #999; }
+        .item-row .control { flex: 1; min-width: 180px; }
+        .item-row input[type="text"], .item-row input[type="number"], .item-row select, .item-row textarea {
+            width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;
+        }
+        .item-row textarea { min-height: 60px; }
+        .item-row .desc { font-size: 12px; color: #999; width: 100%; }
+        .save-btn { background: #27ae60; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .save-btn:hover { background: #219a52; }
+        .btn { background: #fff; border: 1px solid #ddd; color: #555; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 4px; }
+        .btn:hover { border-color: #3498db; color: #3498db; }
+        .toast { position: fixed; top: 20px; right: 20px; background: #2c3e50; color: #fff; padding: 10px 16px; border-radius: 4px; font-size: 13px; display: none; z-index: 100; }
+        .empty { color: #999; text-align: center; padding: 40px; }
+        .actions { margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Business Config 管理后台</h1>
+        <span style="font-size:13px;color:#bdc3c7">Page → Group → Item 三级配置管理</span>
+    </div>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="new-page">
+                <input id="newPageName" placeholder="新配置域名称">
+                <input id="newPageCode" placeholder="编码（如 ORDER）">
+                <button class="save-btn" onclick="createPage()">新增配置域</button>
+            </div>
+            <ul id="pageList"></ul>
+        </div>
+        <div class="main" id="mainContent">
+            <div class="empty">← 选择左侧配置域</div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let currentPage = null;
+
+        const $ = s => document.querySelector(s);
+        const toast = msg => {
+            const t = $('#toast');
+            t.textContent = msg;
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 2000);
+        };
+        const api = (url, opts) => fetch(url, Object.assign({headers: {'Content-Type': 'application/json'}}, opts))
+            .then(r => r.json()).then(r => {
+                if (r.code !== 0) throw new Error(r.message);
+                return r.data;
+            });
+
+        async function loadPages() {
+            const data = await api('/api/pages?page=0&size=100');
+            const ul = $('#pageList');
+            ul.innerHTML = '';
+            for (const p of data.records) {
+                const li = document.createElement('li');
+                li.className = currentPage && currentPage.id === p.id ? 'active' : '';
+                li.innerHTML = `<div>${p.name} <small style="opacity:.7">[${p.status}]</small></div><div class="desc">${p.code}</div>`;
+                li.onclick = () => selectPage(p);
+                ul.appendChild(li);
+            }
+        }
+
+        async function selectPage(page) {
+            currentPage = page;
+            await loadPages();
+            renderMain();
+        }
+
+        async function renderMain() {
+            if (!currentPage) return;
+            const main = $('#mainContent');
+            main.innerHTML = `<h2>${currentPage.name} <small style="font-weight:400;color:#999;font-size:13px">${currentPage.code}</small></h2><div id="groups"></div>`;
+            const groups = await api(`/api/pages/${currentPage.id}/groups`);
+            const container = $('#groups');
+            if (!groups.length) {
+                container.innerHTML = '<div class="empty">暂无分组</div>';
+                return;
+            }
+            for (const g of groups) {
+                const sec = document.createElement('div');
+                sec.className = 'group';
+                sec.innerHTML = `<h3>${g.name} <small style="color:#bbb;font-weight:400">${g.code}</small></h3><div class="items"></div>`;
+                container.appendChild(sec);
+                const items = await api(`/api/groups/${g.id}/items`);
+                const itemsEl = sec.querySelector('.items');
+                if (!items.length) {
+                    itemsEl.innerHTML = '<div style="color:#ccc;font-size:12px;padding:4px 0">（空）</div>';
+                    continue;
+                }
+                for (const it of items) {
+                    itemsEl.appendChild(renderItemRow(it));
+                }
+            }
+        }
+
+        function renderItemRow(it) {
+            const row = document.createElement('div');
+            row.className = 'item-row';
+            let control = '';
+            switch (it.componentType) {
+                case 'SWITCH':
+                    control = `<select data-field="value">
+                        <option value="true" ${it.value === 'true' ? 'selected' : ''}>开启</option>
+                        <option value="false" ${it.value === 'false' ? 'selected' : ''}>关闭</option></select>`;
+                    break;
+                case 'SELECT':
+                case 'RADIO': {
+                    let opts = '';
+                    try {
+                        const list = JSON.parse(it.options || '[]');
+                        list.forEach(o => {
+                            opts += `<option value="${o.value}" ${String(it.value) === String(o.value) ? 'selected' : ''}>${o.label}</option>`;
+                        });
+                    } catch (e) { opts = ''; }
+                    control = `<select data-field="value">${opts}</select>`;
+                    break;
+                }
+                case 'NUMBER':
+                    control = `<input type="number" data-field="value" value="${it.value || ''}">`;
+                    break;
+                case 'TEXTAREA':
+                    control = `<textarea data-field="value">${it.value || ''}</textarea>`;
+                    break;
+                default:
+                    control = `<input type="text" data-field="value" value="${escapeHtml(it.value || '')}">`;
+            }
+            row.innerHTML = `
+                <div class="name">${it.name}<span class="key">${it.key}</span></div>
+                <div class="control">${control}</div>
+                <div class="actions"><button class="save-btn" onclick="saveItemValue(${it.id}, this)">保存</button></div>
+                <div class="desc">${it.description || ''} ${it.required ? '【必填】' : ''}</div>`;
+            return row;
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        async function saveItemValue(id, btn) {
+            const row = btn.closest('.item-row');
+            const value = row.querySelector('[data-field="value"]').value;
+            await api(`/api/items/${id}/value`, {method: 'PATCH', body: JSON.stringify({value})});
+            toast('已保存');
+        }
+
+        async function createPage() {
+            const name = $('#newPageName').value.trim();
+            const code = $('#newPageCode').value.trim();
+            if (!name || !code) { toast('请输入名称和编码'); return; }
+            const page = await api('/api/pages', {method: 'POST', body: JSON.stringify({name, code})});
+            $('#newPageName').value = '';
+            $('#newPageCode').value = '';
+            toast('已创建配置域');
+            await selectPage(page);
+        }
+
+        loadPages().catch(e => toast(e.message));
+    </script>
+</body>
+</html>
