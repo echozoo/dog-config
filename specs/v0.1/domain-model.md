@@ -120,11 +120,21 @@ value 空，defaultValue 空  → 带参重载返回调用方传入参数；无�
 
 - 解析失败：抛出类型转换异常（`IllegalArgumentException`）
 
+写入校验（读取解析与写入校验共用同一份类型规则）：
+
+- `value` / `defaultValue` 必须能按 `valueType` 解析，否则拒绝写入
+- `componentType` 与 `valueType` 必须兼容（SWITCH→BOOLEAN；NUMBER→INTEGER/LONG/DECIMAL；INPUT→STRING；TEXTAREA→STRING/JSON；SELECT/RADIO→STRING）
+- `componentType` 为 SELECT / RADIO 时必须提供合法 JSON 数组 `options`
+- `required = true` 时 `value` 或 `defaultValue` 至少一个非空
+- 校验失败返回 `BAD_REQUEST`
+
 ## 5. 完整性约束
 
 - config_page.code 唯一
 - config_group (page_id, code) 唯一
 - config_item.key 唯一
+- 唯一性检查覆盖已软删除记录：命中已删除记录时返回 `CONFLICT`（提示「已被已删除记录占用」），避免触碰数据库唯一索引异常
+- 删除保护：存在未删除子级的 Page / Group 不允许删除，返回 `CONFLICT`
 - 多租户扩展（tenant_id + key）V1 不引入
 
 ## 6. 关联

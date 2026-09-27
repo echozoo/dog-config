@@ -9,6 +9,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -94,5 +95,73 @@ class ConfigApiIntegrationTest {
 
         mockMvc.perform(get("/api/configs/order.auto.cancel.minutes"))
                 .andExpect(jsonPath("$.data").value(60));
+    }
+
+    @Test
+    void createItemWithInvalidValueRejected() throws Exception {
+        mockMvc.perform(post("/api/groups/1/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"t.invalid.value\",\"name\":\"非法值\",\"value\":\"abc\","
+                                + "\"valueType\":\"INTEGER\",\"componentType\":\"NUMBER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40000));
+    }
+
+    @Test
+    void createItemWithIncompatibleComponentRejected() throws Exception {
+        mockMvc.perform(post("/api/groups/1/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"t.bad.component\",\"name\":\"组件不兼容\",\"value\":\"true\","
+                                + "\"valueType\":\"BOOLEAN\",\"componentType\":\"INPUT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40000));
+    }
+
+    @Test
+    void createSelectWithoutOptionsRejected() throws Exception {
+        mockMvc.perform(post("/api/groups/1/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"t.select.no.options\",\"name\":\"缺选项\",\"value\":\"SF\","
+                                + "\"valueType\":\"STRING\",\"componentType\":\"SELECT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40000));
+    }
+
+    @Test
+    void createRequiredWithoutValueRejected() throws Exception {
+        mockMvc.perform(post("/api/groups/1/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"t.required.empty\",\"name\":\"必填空\","
+                                + "\"valueType\":\"INTEGER\",\"componentType\":\"NUMBER\",\"required\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40000));
+    }
+
+    @Test
+    void createItemWithKeyOfDeletedItemConflicts() throws Exception {
+        mockMvc.perform(delete("/api/items/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(post("/api/groups/1/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"order.timeout\",\"name\":\"重建同名\",\"value\":\"30\","
+                                + "\"valueType\":\"INTEGER\",\"componentType\":\"NUMBER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40900));
+    }
+
+    @Test
+    void deletePageWithChildrenConflicts() throws Exception {
+        mockMvc.perform(delete("/api/pages/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40900));
+    }
+
+    @Test
+    void deleteGroupWithChildrenConflicts() throws Exception {
+        mockMvc.perform(delete("/api/groups/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(40900));
     }
 }

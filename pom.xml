@@ -18,6 +18,14 @@
     <name>dog-config</name>
     <description>业务通用配置管理系统</description>
 
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <modules>
         <module>dog-config-core</module>
         <module>dog-config-sdk</module>

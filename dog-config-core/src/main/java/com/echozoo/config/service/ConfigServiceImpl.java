@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.echozoo.config.domain.ConfigItem;
 import com.echozoo.config.domain.ConfigStatus;
 import com.echozoo.config.domain.ValueType;
+import com.echozoo.config.domain.ValueTypeCodec;
 import com.echozoo.config.mapper.ConfigItemMapper;
 import com.echozoo.config.sdk.ConfigService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -30,10 +31,12 @@ import java.util.Map;
 public class ConfigServiceImpl implements ConfigService {
 
     private final ConfigItemMapper itemMapper;
+    private final ValueTypeCodec codec;
     private final ObjectMapper objectMapper;
 
-    public ConfigServiceImpl(ConfigItemMapper itemMapper, ObjectMapper objectMapper) {
+    public ConfigServiceImpl(ConfigItemMapper itemMapper, ValueTypeCodec codec, ObjectMapper objectMapper) {
         this.itemMapper = itemMapper;
+        this.codec = codec;
         this.objectMapper = objectMapper;
     }
 
@@ -44,7 +47,7 @@ public class ConfigServiceImpl implements ConfigService {
         if (raw == null) {
             return null;
         }
-        return parseValue(key, item.getValueType(), raw);
+        return codec.parse(item.getValueType(), raw);
     }
 
     @Override
@@ -139,7 +142,7 @@ public class ConfigServiceImpl implements ConfigService {
         if (raw == null) {
             return defaultValue;
         }
-        return parseValue(key, item.getValueType(), raw);
+        return codec.parse(item.getValueType(), raw);
     }
 
     private ConfigItem findActiveItem(String key) {
@@ -167,32 +170,8 @@ public class ConfigServiceImpl implements ConfigService {
         Map<String, Object> result = new LinkedHashMap<>();
         for (ConfigItem item : items) {
             String raw = resolveRawValue(item);
-            result.put(item.getKey(), raw == null ? null : parseValue(item.getKey(), item.getValueType(), raw));
+            result.put(item.getKey(), raw == null ? null : codec.parse(item.getValueType(), raw));
         }
         return result;
-    }
-
-    private Object parseValue(String key, ValueType valueType, String raw) {
-        try {
-            return switch (valueType) {
-                case STRING -> raw;
-                case INTEGER -> Integer.valueOf(raw.trim());
-                case LONG -> Long.valueOf(raw.trim());
-                case DECIMAL -> new BigDecimal(raw.trim());
-                case BOOLEAN -> parseBoolean(raw);
-                case JSON -> objectMapper.readTree(raw);
-            };
-        } catch (Exception e) {
-            throw new IllegalArgumentException("配置类型转换失败: key=" + key + ", type=" + valueType + ", value=" + raw, e);
-        }
-    }
-
-    private boolean parseBoolean(String raw) {
-        String s = raw.trim();
-        return switch (s.toLowerCase()) {
-            case "true", "1", "yes", "on" -> true;
-            case "false", "0", "no", "off" -> false;
-            default -> throw new IllegalArgumentException("无法解析的布尔值: " + s);
-        };
     }
 }

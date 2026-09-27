@@ -3,6 +3,7 @@ package com.echozoo.config.service;
 import com.echozoo.config.domain.ConfigItem;
 import com.echozoo.config.domain.ConfigStatus;
 import com.echozoo.config.domain.ValueType;
+import com.echozoo.config.domain.ValueTypeCodec;
 import com.echozoo.config.mapper.ConfigItemMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,7 +32,8 @@ class ConfigServiceImplTest {
     @BeforeEach
     void setUp() {
         itemMapper = mock(ConfigItemMapper.class);
-        service = new ConfigServiceImpl(itemMapper, new ObjectMapper());
+        ObjectMapper objectMapper = new ObjectMapper();
+        service = new ConfigServiceImpl(itemMapper, new ValueTypeCodec(objectMapper), objectMapper);
     }
 
     private void mockItem(ConfigItem item) {

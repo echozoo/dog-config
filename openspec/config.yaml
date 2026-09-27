@@ -1,0 +1,89 @@
+schema: spec-driven
+
+# 项目上下文：创建任何 artifact 时都应遵循的背景与约束
+context: |
+  # 项目
+  dog-config —— 业务通用配置管理系统（Business Config）。
+  以 Page → Group → Item 三级模型统一管理零散业务配置；配置 Key 是业务访问的稳定契约。
+
+  # 技术栈
+  Java 17 + Spring Boot 3.3.5；数据访问 MyBatis-Plus 3.5.7；本地 MySQL（V1 不引入 Redis）。
+  管理后台为原生 HTML/JS 静态页面（无前端构建链）。
+  多模块 Maven：dog-config-sdk / dog-config-core / dog-config-web，版本 0.1.0，groupId com.echozoo，包名 com.echozoo.config。
+
+  # 分层与依赖方向
+  - sdk：只定义接口契约 ConfigService，不依赖 core，不含实现。
+  - core：实体 / 枚举 / Mapper 及 ConfigService 实现，依赖 sdk。
+  - web：Controller / DTO / 异常 / 装配，依赖 core + sdk。
+  - 接口契约只定义在 sdk；实现放 core；web 只做 HTTP 暴露。
+
+  # 读取语义（稳定契约，不可随意更改）
+  value → defaultValue → 调用方参数 / null。
+
+  # 持久化约定
+  - 软删除用 MyBatis-Plus @TableLogic（deleted 列，1=删 / 0=存）；status 列保留 ACTIVE/DISABLED 业务态。
+  - value / defaultValue 以字符串原始存储，读取时按 valueType 解析（STRING/INTEGER/LONG/DECIMAL/BOOLEAN/JSON）。
+  - options 存 JSON 字符串；componentType 驱动管理后台渲染。
+  - 唯一约束：config_page.code、config_group(page_id, code)、config_item.key（均不含 deleted）。
+
+  # API 约定
+  - 统一响应 ApiResponse{code, message, data}；错误码集中在 ErrorCode
+    （BAD_REQUEST=40000、NOT_FOUND=40400、CONFLICT=40900、INTERNAL_ERROR=50000），由 GlobalExceptionHandler 统一包装。
+  - HTTP 状态默认 200，业务错误以 code 表达。
+  - 读取端 /api/configs；管理端 /api/pages、/api/groups、/api/items。
+
+  # 测试与构建
+  - 构建：mvn install（先把 sdk/core 装到本地仓库，再构建 web）。
+  - 运行：mvn -pl dog-config-web spring-boot:run（端口 8080）。
+  - core：单元测试（Mockito）。
+  - web：集成测试（@SpringBootTest + MockMvc + @Transactional 回滚），连本地 MySQL dog_config_test
+    （createDatabaseIfNotExist 自动建库，spring.sql.init.mode=always）。
+  - 本地运行库：MySQL dog_config，凭据 admin/123456（见 web application.yml），仅供本地。
+
+  # 文档与语言
+  - 文档、注释、提交信息使用中文。
+  - 需求来源：doc/product/v0.1/业务通用配置管理系统需求规格说明书_v1.0.md。
+  - 项目自身规格在 specs/v0.1/（Requirement → Spec → Design → Tasks → Review）。
+  - 提交信息使用约定式前缀（如 feat: ...）。
+
+# 按 artifact 的规则（仅在该 artifact 被创建时生效）
+rules:
+  proposal:
+    - "用中文书写"
+    - "聚焦 Why / What，保持简洁（1–2 页），不写实现细节"
+    - "必须包含 Capabilities（New / Modified）；无规格变更时显式说明并置 skip_specs"
+    - "明确 Non-goals（本次不做什么）"
+    - "引用需求来源：doc/product/v0.1 或 specs/v0.1 的相关条款"
+  specs:
+    - "用中文书写，描述可观察的行为契约，不写类名、框架或实现步骤"
+    - "需求用 SHALL/MUST 表述，且每条需求至少包含一个 Scenario"
+    - "Scenario 必须使用四级标题 ####，采用 WHEN/THEN 格式"
+    - "新增能力需包含 ## Purpose（50 字以上）"
+    - "错误行为以 ErrorCode 语义表达（BAD_REQUEST / NOT_FOUND / CONFLICT）"
+  design:
+    - "用中文书写"
+    - "记录关键决策及其理由与备选方案"
+    - "明确 Goals / Non-Goals 与风险（Risk → Mitigation）"
+    - "数据库结构变更必须同步 specs/v0.1/database-design.md 与 db/schema.sql"
+    - "保持读取语义不变：value → defaultValue → 调用方参数 / null"
+  tasks:
+    - "用中文书写，使用 checkbox 列表（- [ ] X.Y 任务描述）"
+    - "按依赖分组编号，任务粒度可在一次会话内完成"
+    - "每个任务可追溯到 spec 需求或 design 决策"
+    - "验证方式应包含 mvn install 与相应测试"
+
+# 按操作的指引（apply / archive 的执行辅导）
+operations:
+  apply:
+    guidance:
+      - "遵循 Spec-Driven：先确认 specs/ 中的规格再实现，不擅自扩展范围"
+      - "接口契约只改 dog-config-sdk，实现放 dog-config-core，web 只做 HTTP 暴露"
+      - "改数据库结构时同步 specs/v0.1/database-design.md 与 db/schema.sql"
+      - "保持读取语义 value → defaultValue → 调用方参数 / null 不变"
+      - "core 用 Mockito 单测；web 用 MockMvc 集成测试连本地 MySQL dog_config_test"
+      - "收尾运行 mvn install，确保全模块与测试通过"
+  archive:
+    guidance:
+      - "归档前用中文简述本次变更结果与验证情况"
+      - "确认 specs/v0.1 等既有文档已同步"
+      - "归档前更新 README.md 的「当前状态 / 路线图」章节，使其与本次已归档变更一致"

@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-09-26
+goal: 配置项值变更可追溯、可回滚；软删后可显式恢复；读语义与性能不变

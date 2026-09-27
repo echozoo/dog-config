@@ -8,6 +8,7 @@ import com.echozoo.config.domain.ConfigGroup;
 import com.echozoo.config.domain.ConfigItem;
 import com.echozoo.config.domain.ConfigPage;
 import com.echozoo.config.domain.ConfigStatus;
+import com.echozoo.config.domain.ValueTypeCodec;
 import com.echozoo.config.dto.GroupRequest;
 import com.echozoo.config.dto.ItemRequest;
 import com.echozoo.config.dto.PageRequest;
@@ -27,11 +28,14 @@ public class ConfigAdminService {
     private final ConfigPageMapper pageMapper;
     private final ConfigGroupMapper groupMapper;
     private final ConfigItemMapper itemMapper;
+    private final ValueTypeCodec codec;
 
-    public ConfigAdminService(ConfigPageMapper pageMapper, ConfigGroupMapper groupMapper, ConfigItemMapper itemMapper) {
+    public ConfigAdminService(ConfigPageMapper pageMapper, ConfigGroupMapper groupMapper,
+                              ConfigItemMapper itemMapper, ValueTypeCodec codec) {
         this.pageMapper = pageMapper;
         this.groupMapper = groupMapper;
         this.itemMapper = itemMapper;
+        this.codec = codec;
     }
 
     // ---------- Page ----------
@@ -84,6 +88,11 @@ public class ConfigAdminService {
     @Transactional
     public void deletePage(Long id) {
         ConfigPage page = requirePage(id);
+        Long childGroups = groupMapper.selectCount(new LambdaQueryWrapper<ConfigGroup>()
+                .eq(ConfigGroup::getPageId, page.getId()));
+        if (childGroups != null && childGroups > 0) {
+            throw new ApiException(ErrorCode.CONFLICT, "Page 下存在未删除的 Group，无法删除: " + id);
+        }
         pageMapper.deleteById(page.getId());
     }
 
@@ -146,6 +155,11 @@ public class ConfigAdminService {
     @Transactional
     public void deleteGroup(Long id) {
         requireGroup(id);
+        Long childItems = itemMapper.selectCount(new LambdaQueryWrapper<ConfigItem>()
+                .eq(ConfigItem::getGroupId, id));
+        if (childItems != null && childItems > 0) {
+            throw new ApiException(ErrorCode.CONFLICT, "Group 下存在未删除的 Item，无法删除: " + id);
+        }
         groupMapper.deleteById(id);
     }
 
@@ -163,6 +177,7 @@ public class ConfigAdminService {
     @Transactional
     public ConfigItem createItem(Long groupId, ItemRequest req) {
         requireGroup(groupId);
+        validateItemDefinition(req);
         checkItemKeyUnique(null, req.getKey());
         ConfigItem item = new ConfigItem();
         item.setGroupId(groupId);
@@ -190,6 +205,7 @@ public class ConfigAdminService {
     @Transactional
     public ConfigItem updateItem(Long id, ItemRequest req) {
         ConfigItem item = requireItem(id);
+        validateItemDefinition(req);
         checkItemKeyUnique(id, req.getKey());
         applyItemRequest(item, req);
         item.setUpdatedAt(LocalDateTime.now());
@@ -215,6 +231,10 @@ public class ConfigAdminService {
     @Transactional
     public ConfigItem updateItemValue(Long id, String value) {
         ConfigItem item = requireItem(id);
+        codec.validateValue(item.getValueType(), value, "value");
+        if (Boolean.TRUE.equals(item.getRequired()) && isBlank(value) && isBlank(item.getDefaultValue())) {
+            throw new ApiException(ErrorCode.BAD_REQUEST, "required=true 时 value 或 defaultValue 至少一个非空");
+        }
         item.setValue(value);
         item.setUpdatedAt(LocalDateTime.now());
         itemMapper.updateById(item);
@@ -222,6 +242,25 @@ public class ConfigAdminService {
     }
 
     // ---------- helpers ----------
+
+    private void validateItemDefinition(ItemRequest req) {
+        codec.validateValue(req.getValueType(), req.getValue(), "value");
+        codec.validateValue(req.getValueType(), req.getDefaultValue(), "defaultValue");
+        codec.validateComponent(req.getValueType(), req.getComponentType());
+        codec.validateOptions(req.getComponentType(), req.getOptions());
+        if (Boolean.TRUE.equals(req.getRequired())
+                && isBlank(req.getValue()) && isBlank(req.getDefaultValue())) {
+            throw new ApiException(ErrorCode.BAD_REQUEST, "required=true 时 value 或 defaultValue 至少一个非空");
+        }
+    }
+
+    private boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    private boolean isDeleted(Integer deleted) {
+        return deleted != null && deleted != 0;
+    }
 
     private void applyItemRequest(ConfigItem item, ItemRequest req) {
         item.setKey(req.getKey());
@@ -281,30 +320,27 @@ public class ConfigAdminService {
     }
 
     private void checkPageCodeUnique(Long excludeId, String code) {
-        ConfigPage existing = pageMapper.selectOne(new LambdaQueryWrapper<ConfigPage>()
-                .eq(ConfigPage::getCode, code)
-                .last("LIMIT 1"));
+        ConfigPage existing = pageMapper.selectByCodeIncludeDeleted(code);
         if (existing != null && !existing.getId().equals(excludeId)) {
-            throw new ApiException(ErrorCode.CONFLICT, "Page code 已存在: " + code);
+            throw new ApiException(ErrorCode.CONFLICT, conflictMessage("Page code 已存在: " + code, existing.getDeleted()));
         }
     }
 
     private void checkGroupCodeUnique(Long excludeId, Long pageId, String code) {
-        ConfigGroup existing = groupMapper.selectOne(new LambdaQueryWrapper<ConfigGroup>()
-                .eq(ConfigGroup::getPageId, pageId)
-                .eq(ConfigGroup::getCode, code)
-                .last("LIMIT 1"));
+        ConfigGroup existing = groupMapper.selectByPageIdAndCodeIncludeDeleted(pageId, code);
         if (existing != null && !existing.getId().equals(excludeId)) {
-            throw new ApiException(ErrorCode.CONFLICT, "Group code 已存在: " + code);
+            throw new ApiException(ErrorCode.CONFLICT, conflictMessage("Group code 已存在: " + code, existing.getDeleted()));
         }
     }
 
     private void checkItemKeyUnique(Long excludeId, String key) {
-        ConfigItem existing = itemMapper.selectOne(new LambdaQueryWrapper<ConfigItem>()
-                .eq(ConfigItem::getKey, key)
-                .last("LIMIT 1"));
+        ConfigItem existing = itemMapper.selectByKeyIncludeDeleted(key);
         if (existing != null && !existing.getId().equals(excludeId)) {
-            throw new ApiException(ErrorCode.CONFLICT, "Item key 已存在: " + key);
+            throw new ApiException(ErrorCode.CONFLICT, conflictMessage("Item key 已存在: " + key, existing.getDeleted()));
         }
+    }
+
+    private String conflictMessage(String base, Integer deleted) {
+        return isDeleted(deleted) ? base + "（已被已删除记录占用）" : base;
     }
 }
