@@ -1,7 +1,8 @@
 # 设计决策记录 — Business Config v0.1
 
 > Design 层（Why / 关键取舍）。
-> 对应 Spec：`specs/v0.1/domain-model.md`、`specs/v0.1/api-design.md`、`specs/v0.1/project-structure.md`
+> 对应 Spec：`openspec/specs/config-model/spec.md`、`openspec/specs/config-admin-api/spec.md`、`openspec/specs/config-read-api/spec.md`
+> 对应 Design：`doc/design/database-design.md`、`doc/design/api-design.md`、`doc/design/project-structure.md`
 
 ## 决策汇总
 
@@ -17,6 +18,9 @@
 | D8 | 软删除 | @TableLogic（deleted 列） | 手写 status 过滤 | MyBatis-Plus 原生支持，自动过滤，status 保留 ACTIVE/DISABLED 业务态 |
 | D9 | 包名 | com.echozoo.config | com.echozoo.dogconfig | 用户选择 |
 | D10 | 配置值存储 | value/defaultValue 均字符串原始存储 | 类型化列 | 一个列适应 6 种类型，读取时按 valueType 解析（需求书 §10） |
+| D11 | 值校验与解析同源 | core 共享值编解码器 | 写路径各自校验 / DTO 注解 | 读写规则漂移会导致「写通过、读失败」；注解无法表达由请求决定的动态 valueType |
+| D12 | 唯一性与删除保护 | 查重覆盖已软删除记录 + 父级删除保护 | 唯一索引含 deleted / 级联删除 | 软删行仍占用唯一约束，需显式返回 409；删除仍有子级的 Page/Group 需先清空 |
+| D13 | 配置值版本 | append-only `config_item_version`，只记值变更 | 整行快照 / 发布-草稿双区 | 只记 value/defaultValue/valueType，回滚即写回旧值再追加 ROLLBACK；读路径仍只读当前值 |
 
 ## 关键决策详述
 
@@ -47,6 +51,22 @@ dog-config-web  ──▶ 依赖 core（装配） + sdk（契约）
 - value / defaultValue 存字符串，不按类型建列
 - 好处：统一处理、DB 结构稳定；代价：读取时需类型转换（core 中集中处理）
 - 类型转换失败抛 `IllegalArgumentException`（Bad Request）
+
+### D11：值校验与解析同源
+
+- core 提供共享值编解码器，读路径解析与写路径校验使用同一份类型规则
+- 写入时校验 value/defaultValue 能否按 valueType 解析、componentType 与 valueType 兼容、SELECT/RADIO 提供合法 JSON 数组 options、required 至少一个取值非空；不满足返回 `BAD_REQUEST`
+
+### D12：软删感知的唯一性与父级删除保护
+
+- 唯一性查重覆盖已软删除记录：命中已删除记录时返回 `CONFLICT`（提示「已被已删除记录占用」），避免触碰数据库唯一索引异常
+- 删除 Page / Group 时若存在未删除子级，返回 `CONFLICT`，要求先清空子级
+
+### D13：配置值版本（append-only）
+
+- `config_item_version` 只在 `value` / `defaultValue` 变化时追加，记录 value/defaultValue/valueType 与 change_type（CREATE/UPDATE/ROLLBACK/RESTORE），无 deleted、无 operator
+- 回滚 = 写回旧值 + 追加 ROLLBACK 版本；恢复软删项 = 解除软删 + 追加 RESTORE 版本
+- 读路径与 SDK 契约零改动：读取始终返回当前值
 
 ## 未决 / 后续可优化
 

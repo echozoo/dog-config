@@ -2,6 +2,7 @@ package com.echozoo.config.web.controller;
 
 import com.echozoo.config.common.ApiResponse;
 import com.echozoo.config.domain.ConfigItem;
+import com.echozoo.config.domain.ConfigItemVersion;
 import com.echozoo.config.domain.ConfigStatus;
 import com.echozoo.config.dto.ItemRequest;
 import com.echozoo.config.dto.StatusRequest;
@@ -67,5 +68,25 @@ public class ItemController {
     @PatchMapping("/items/{id}/value")
     public ApiResponse<ConfigItem> updateValue(@PathVariable Long id, @Valid @RequestBody ValueRequest req) {
         return ApiResponse.ok(adminService.updateItemValue(id, req.getValue()));
+    }
+
+    @GetMapping("/items/{id}/versions")
+    public ApiResponse<List<ConfigItemVersion>> listVersions(@PathVariable Long id) {
+        return ApiResponse.ok(adminService.listVersions(id));
+    }
+
+    @GetMapping("/items/{id}/versions/{versionNo}")
+    public ApiResponse<ConfigItemVersion> getVersion(@PathVariable Long id, @PathVariable Integer versionNo) {
+        return ApiResponse.ok(adminService.getVersion(id, versionNo));
+    }
+
+    @PostMapping("/items/{id}/versions/{versionNo}/rollback")
+    public ApiResponse<ConfigItem> rollback(@PathVariable Long id, @PathVariable Integer versionNo) {
+        return ApiResponse.ok(adminService.rollback(id, versionNo));
+    }
+
+    @PostMapping("/items/{id}/restore")
+    public ApiResponse<ConfigItem> restore(@PathVariable Long id) {
+        return ApiResponse.ok(adminService.restore(id));
     }
 }

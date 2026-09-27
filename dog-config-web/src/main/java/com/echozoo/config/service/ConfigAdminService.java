@@ -6,14 +6,17 @@ import com.echozoo.config.common.ApiException;
 import com.echozoo.config.common.ErrorCode;
 import com.echozoo.config.domain.ConfigGroup;
 import com.echozoo.config.domain.ConfigItem;
+import com.echozoo.config.domain.ConfigItemVersion;
 import com.echozoo.config.domain.ConfigPage;
 import com.echozoo.config.domain.ConfigStatus;
 import com.echozoo.config.domain.ValueTypeCodec;
+import com.echozoo.config.domain.VersionChangeType;
 import com.echozoo.config.dto.GroupRequest;
 import com.echozoo.config.dto.ItemRequest;
 import com.echozoo.config.dto.PageRequest;
 import com.echozoo.config.mapper.ConfigGroupMapper;
 import com.echozoo.config.mapper.ConfigItemMapper;
+import com.echozoo.config.mapper.ConfigItemVersionMapper;
 import com.echozoo.config.mapper.ConfigPageMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +24,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class ConfigAdminService {
@@ -28,13 +32,16 @@ public class ConfigAdminService {
     private final ConfigPageMapper pageMapper;
     private final ConfigGroupMapper groupMapper;
     private final ConfigItemMapper itemMapper;
+    private final ConfigItemVersionMapper versionMapper;
     private final ValueTypeCodec codec;
 
     public ConfigAdminService(ConfigPageMapper pageMapper, ConfigGroupMapper groupMapper,
-                              ConfigItemMapper itemMapper, ValueTypeCodec codec) {
+                              ConfigItemMapper itemMapper, ConfigItemVersionMapper versionMapper,
+                              ValueTypeCodec codec) {
         this.pageMapper = pageMapper;
         this.groupMapper = groupMapper;
         this.itemMapper = itemMapper;
+        this.versionMapper = versionMapper;
         this.codec = codec;
     }
 
@@ -185,6 +192,7 @@ public class ConfigAdminService {
         item.setStatus(ConfigStatus.ACTIVE);
         fillTimestamps(item);
         itemMapper.insert(item);
+        addVersion(item, VersionChangeType.CREATE);
         return item;
     }
 
@@ -207,9 +215,14 @@ public class ConfigAdminService {
         ConfigItem item = requireItem(id);
         validateItemDefinition(req);
         checkItemKeyUnique(id, req.getKey());
+        String oldValue = item.getValue();
+        String oldDefaultValue = item.getDefaultValue();
         applyItemRequest(item, req);
         item.setUpdatedAt(LocalDateTime.now());
         itemMapper.updateById(item);
+        if (!Objects.equals(oldValue, item.getValue()) || !Objects.equals(oldDefaultValue, item.getDefaultValue())) {
+            addVersion(item, VersionChangeType.UPDATE);
+        }
         return item;
     }
 
@@ -238,10 +251,69 @@ public class ConfigAdminService {
         item.setValue(value);
         item.setUpdatedAt(LocalDateTime.now());
         itemMapper.updateById(item);
+        addVersion(item, VersionChangeType.UPDATE);
+        return item;
+    }
+
+    // ---------- Item 版本 ----------
+
+    public List<ConfigItemVersion> listVersions(Long itemId) {
+        requireItem(itemId);
+        return versionMapper.selectByItemIdOrderByVersionNo(itemId);
+    }
+
+    public ConfigItemVersion getVersion(Long itemId, Integer versionNo) {
+        requireItem(itemId);
+        return requireVersion(itemId, versionNo);
+    }
+
+    @Transactional
+    public ConfigItem rollback(Long itemId, Integer versionNo) {
+        ConfigItem item = requireItem(itemId);
+        ConfigItemVersion version = requireVersion(itemId, versionNo);
+        item.setValue(version.getValue());
+        item.setDefaultValue(version.getDefaultValue());
+        item.setUpdatedAt(LocalDateTime.now());
+        itemMapper.updateById(item);
+        addVersion(item, VersionChangeType.ROLLBACK);
+        return item;
+    }
+
+    @Transactional
+    public ConfigItem restore(Long itemId) {
+        ConfigItem existing = itemMapper.selectByIdIncludeDeleted(itemId);
+        if (existing == null || !isDeleted(existing.getDeleted())) {
+            throw new ApiException(ErrorCode.NOT_FOUND, "待恢复的 Item 不存在或未删除: " + itemId);
+        }
+        itemMapper.restoreById(itemId);
+        ConfigItem item = requireItem(itemId);
+        addVersion(item, VersionChangeType.RESTORE);
         return item;
     }
 
     // ---------- helpers ----------
+
+    private ConfigItemVersion addVersion(ConfigItem item, VersionChangeType changeType) {
+        Integer max = versionMapper.selectMaxVersionNo(item.getId());
+        ConfigItemVersion version = new ConfigItemVersion();
+        version.setItemId(item.getId());
+        version.setVersionNo((max == null ? 0 : max) + 1);
+        version.setValue(item.getValue());
+        version.setDefaultValue(item.getDefaultValue());
+        version.setValueType(item.getValueType());
+        version.setChangeType(changeType);
+        version.setCreatedAt(LocalDateTime.now());
+        versionMapper.insert(version);
+        return version;
+    }
+
+    private ConfigItemVersion requireVersion(Long itemId, Integer versionNo) {
+        ConfigItemVersion version = versionMapper.selectByItemIdAndVersionNo(itemId, versionNo);
+        if (version == null) {
+            throw new ApiException(ErrorCode.NOT_FOUND, "版本不存在: item=" + itemId + ", versionNo=" + versionNo);
+        }
+        return version;
+    }
 
     private void validateItemDefinition(ItemRequest req) {
         codec.validateValue(req.getValueType(), req.getValue(), "value");

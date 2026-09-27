@@ -1,5 +1,7 @@
 package com.echozoo.config.web;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,6 +15,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +38,9 @@ class ConfigApiIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void readSingleTypedConfig() throws Exception {
@@ -163,5 +169,135 @@ class ConfigApiIntegrationTest {
         mockMvc.perform(delete("/api/groups/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(40900));
+    }
+
+    @Test
+    void createItemProducesInitialVersion() throws Exception {
+        long id = createItem("t.version.create", "10");
+
+        mockMvc.perform(get("/api/items/" + id + "/versions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].versionNo").value(1))
+                .andExpect(jsonPath("$.data[0].changeType").value("CREATE"))
+                .andExpect(jsonPath("$.data[0].value").value("10"));
+    }
+
+    @Test
+    void valueChangeAppendsUpdateVersion() throws Exception {
+        long id = createItem("t.version.update", "10");
+
+        mockMvc.perform(patch("/api/items/" + id + "/value")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"20\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/items/" + id + "/versions"))
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[1].versionNo").value(2))
+                .andExpect(jsonPath("$.data[1].changeType").value("UPDATE"))
+                .andExpect(jsonPath("$.data[1].value").value("20"));
+    }
+
+    @Test
+    void nonValueChangeDoesNotAppendVersion() throws Exception {
+        long id = createItem("t.version.novalue", "10");
+
+        mockMvc.perform(put("/api/items/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"t.version.novalue\",\"name\":\"改名不改值\",\"value\":\"10\","
+                                + "\"valueType\":\"INTEGER\",\"componentType\":\"NUMBER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/items/" + id + "/versions"))
+                .andExpect(jsonPath("$.data.length()").value(1));
+    }
+
+    @Test
+    void versionDetailAndNotFound() throws Exception {
+        long id = createItem("t.version.detail", "10");
+
+        mockMvc.perform(get("/api/items/" + id + "/versions/1"))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.versionNo").value(1));
+
+        mockMvc.perform(get("/api/items/" + id + "/versions/99"))
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    @Test
+    void versionsForMissingItemNotFound() throws Exception {
+        mockMvc.perform(get("/api/items/999999/versions"))
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    @Test
+    void rollbackRestoresValueAndKeepsHistory() throws Exception {
+        mockMvc.perform(patch("/api/items/1/value")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"60\"}"))
+                .andExpect(jsonPath("$.code").value(0));
+        mockMvc.perform(patch("/api/items/1/value")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\":\"90\"}"))
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(post("/api/items/1/versions/1/rollback"))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.value").value("60"));
+
+        mockMvc.perform(get("/api/items/1/versions"))
+                .andExpect(jsonPath("$.data.length()").value(3))
+                .andExpect(jsonPath("$.data[2].changeType").value("ROLLBACK"))
+                .andExpect(jsonPath("$.data[2].value").value("60"));
+
+        mockMvc.perform(get("/api/configs/order.timeout"))
+                .andExpect(jsonPath("$.data").value(60));
+    }
+
+    @Test
+    void rollbackToMissingVersionNotFound() throws Exception {
+        mockMvc.perform(post("/api/items/1/versions/99/rollback"))
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    @Test
+    void restoreSoftDeletedItem() throws Exception {
+        mockMvc.perform(delete("/api/items/1"))
+                .andExpect(jsonPath("$.code").value(0));
+        mockMvc.perform(get("/api/configs/order.timeout"))
+                .andExpect(jsonPath("$.code").value(40400));
+
+        mockMvc.perform(post("/api/items/1/restore"))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.id").value(1));
+
+        mockMvc.perform(get("/api/configs/order.timeout"))
+                .andExpect(jsonPath("$.data").value(30));
+
+        mockMvc.perform(get("/api/items/1/versions"))
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].changeType").value("RESTORE"));
+    }
+
+    @Test
+    void restoreNonDeletedItemNotFound() throws Exception {
+        mockMvc.perform(post("/api/items/1/restore"))
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    private long createItem(String key, String value) throws Exception {
+        String body = mockMvc.perform(post("/api/groups/1/items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"key\":\"" + key + "\",\"name\":\"版本测试项\",\"value\":\"" + value + "\","
+                                + "\"valueType\":\"INTEGER\",\"componentType\":\"NUMBER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode node = objectMapper.readTree(body);
+        return node.path("data").path("id").asLong();
     }
 }

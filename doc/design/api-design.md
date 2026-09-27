@@ -1,9 +1,8 @@
 # API 设计 — Business Config v0.1
 
-> 对应规格：`specs/v0.1/domain-model.md`
+> 对应领域规格：`openspec/specs/config-admin-api/spec.md`、`openspec/specs/config-read-api/spec.md`
 > 本文件定义管理端 CRUD API 与业务读取 API（Design 层，How）。
 > 双通道落地：sdk 提供 Java Bean 类型化 API，web 暴露 HTTP 接口。
-> 层说明：Spec 层见 `specs/v0.1/domain-model.md`；索引见 `specs/v0.1/README.md`。
 
 ## 1. 概览
 
@@ -23,7 +22,7 @@
 | 0 | 成功 |
 | 40000 | 参数校验失败 |
 | 40400 | 资源不存在 |
-| 40900 | 唯一性冲突（code/key 重复） |
+| 40900 | 唯一性冲突（code/key 重复，含与已软删除记录重复）/ 层级删除保护（含未删除子级） |
 | 50000 | 服务器内部错误 |
 
 ## 3. Page 管理
@@ -82,6 +81,10 @@
 | DELETE | /api/items/{id} | 逻辑删除 Item | - |
 | PATCH | /api/items/{id}/status | 启用/禁用 Item | {status} |
 | PATCH | /api/items/{id}/value | 修改配置值 | {value} |
+| GET | /api/items/{id}/versions | 列出配置项版本（按 version_no 升序） | - |
+| GET | /api/items/{id}/versions/{versionNo} | 查询单个版本详情 | - |
+| POST | /api/items/{id}/versions/{versionNo}/rollback | 回滚到指定历史版本 | - |
+| POST | /api/items/{id}/restore | 恢复已软删除的配置项 | - |
 
 **ItemRequest**
 
@@ -121,7 +124,7 @@
 } }
 ```
 
-**读取规则（同领域模型 §4）**
+**读取规则**
 
 ```text
 value 非空            → 使用 value
@@ -152,11 +155,11 @@ Map<String, Object> getBatch(List<String> keys);
 Map<String, Object> getByPrefix(String prefix);
 ```
 
-- 读取优先级（同领域模型 §4）：`value` → `defaultValue`（DB 兜底）→ 调用方传入参数 / null
+- 读取优先级：`value` → `defaultValue`（DB 兜底）→ 调用方传入参数 / null
 - 类型转换失败抛 `IllegalArgumentException`
 - `getBatch` / `getByPrefix` 与 HTTP 批量读取规则一致
 
 ## 8. 关联
 
-- 领域模型：`specs/v0.1/domain-model.md`
-- 模块结构：`specs/v0.1/project-structure.md`
+- 领域规格：`openspec/specs/config-admin-api/spec.md`、`openspec/specs/config-read-api/spec.md`
+- 模块结构：`doc/design/project-structure.md`

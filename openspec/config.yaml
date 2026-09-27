@@ -43,7 +43,7 @@ context: |
   # 文档与语言
   - 文档、注释、提交信息使用中文。
   - 需求来源：doc/product/v0.1/业务通用配置管理系统需求规格说明书_v1.0.md。
-  - 项目自身规格在 specs/v0.1/（Requirement → Spec → Design → Tasks → Review）。
+  - 项目自身规格在 openspec/（openspec/specs 能力规格 + openspec/changes 增量变更）；持久设计文档在 doc/design/。
   - 提交信息使用约定式前缀（如 feat: ...）。
 
 # 按 artifact 的规则（仅在该 artifact 被创建时生效）
@@ -53,7 +53,7 @@ rules:
     - "聚焦 Why / What，保持简洁（1–2 页），不写实现细节"
     - "必须包含 Capabilities（New / Modified）；无规格变更时显式说明并置 skip_specs"
     - "明确 Non-goals（本次不做什么）"
-    - "引用需求来源：doc/product/v0.1 或 specs/v0.1 的相关条款"
+    - "引用需求来源：doc/product/v0.1 或 doc/design/ 的相关条款"
   specs:
     - "用中文书写，描述可观察的行为契约，不写类名、框架或实现步骤"
     - "需求用 SHALL/MUST 表述，且每条需求至少包含一个 Scenario"
@@ -64,7 +64,7 @@ rules:
     - "用中文书写"
     - "记录关键决策及其理由与备选方案"
     - "明确 Goals / Non-Goals 与风险（Risk → Mitigation）"
-    - "数据库结构变更必须同步 specs/v0.1/database-design.md 与 db/schema.sql"
+    - "数据库结构变更必须同步 doc/design/database-design.md 与 db/schema.sql"
     - "保持读取语义不变：value → defaultValue → 调用方参数 / null"
   tasks:
     - "用中文书写，使用 checkbox 列表（- [ ] X.Y 任务描述）"
@@ -78,12 +78,12 @@ operations:
     guidance:
       - "遵循 Spec-Driven：先确认 specs/ 中的规格再实现，不擅自扩展范围"
       - "接口契约只改 dog-config-sdk，实现放 dog-config-core，web 只做 HTTP 暴露"
-      - "改数据库结构时同步 specs/v0.1/database-design.md 与 db/schema.sql"
+      - "改数据库结构时同步 doc/design/database-design.md 与 db/schema.sql"
       - "保持读取语义 value → defaultValue → 调用方参数 / null 不变"
       - "core 用 Mockito 单测；web 用 MockMvc 集成测试连本地 MySQL dog_config_test"
       - "收尾运行 mvn install，确保全模块与测试通过"
   archive:
     guidance:
       - "归档前用中文简述本次变更结果与验证情况"
-      - "确认 specs/v0.1 等既有文档已同步"
+      - "确认 doc/design/ 等既有文档已同步"
       - "归档前更新 README.md 的「当前状态 / 路线图」章节，使其与本次已归档变更一致"

@@ -1,5 +1,5 @@
 -- Business Config 数据库结构
--- 对应规格：specs/v0.1/database-design.md
+-- 对应设计：doc/design/database-design.md
 -- 兼容 MySQL 与 H2（MODE=MySQL）
 
 CREATE TABLE IF NOT EXISTS config_page (
@@ -49,4 +49,17 @@ CREATE TABLE IF NOT EXISTS config_item (
     deleted        TINYINT(1)    NOT NULL DEFAULT 0,
     CONSTRAINT uk_config_item_key UNIQUE (`key`),
     CONSTRAINT fk_config_item_group FOREIGN KEY (group_id) REFERENCES config_group (id)
+);
+
+CREATE TABLE IF NOT EXISTS config_item_version (
+    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+    item_id        BIGINT        NOT NULL,
+    version_no     INT           NOT NULL,
+    `value`        TEXT          NULL,
+    `default_value` TEXT         NULL,
+    value_type     VARCHAR(32)   NULL,
+    change_type    VARCHAR(32)   NOT NULL,
+    created_at     DATETIME      NOT NULL,
+    CONSTRAINT uk_config_item_version UNIQUE (item_id, version_no),
+    CONSTRAINT fk_config_item_version_item FOREIGN KEY (item_id) REFERENCES config_item (id)
 );

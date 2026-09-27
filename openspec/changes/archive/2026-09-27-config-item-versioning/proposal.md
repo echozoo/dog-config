@@ -25,6 +25,6 @@
 
 - `dog-config-core`：新增版本实体 / Mapper / 版本写入与读取支撑。
 - `dog-config-web`：新增版本查询与回滚/恢复端点；`ConfigAdminService` 接入版本写入。
-- 数据库：新增 `config_item_version` 表；需同步 `db/schema.sql` 与 `specs/v0.1/database-design.md`。
+- 数据库：新增 `config_item_version` 表；需同步 `db/schema.sql` 与 `doc/design/database-design.md`。
 - 读路径、SDK 契约、缓存：无变更。
 - 依赖前置：恢复端点依赖 `harden-config-writes` 提供的「删后同名 409」语义。

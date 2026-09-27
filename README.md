@@ -1,6 +1,8 @@
 # dog-config · 业务通用配置管理系统
 
-> 面向业务系统的统一配置管理基础设施。用 **Page → Group → Item** 三级模型，把零散的业务配置（订单 / 商品 / 物流…）统一存储、统一管理、统一访问。配置 **Key** 是业务访问的稳定契约。
+> 把散落的业务配置（订单超时、超卖开关、默认物流商……）收进一个 **Page → Group → Item** 三级模型统一管理；业务代码只认一个稳定的 **Key**，即可类型化读取。
+>
+> 适合「不想为改一个配置而发版」的团队；它**不是**应用运行时配置中心（见下）。
 
 ## 这是什么
 
@@ -11,6 +13,14 @@ dog-config 把它们收进来集中管理，并给业务方一个**类型化、�
 **它不是什么：** 它不是 Nacos / Apollo 这类应用运行时配置中心。dog-config 管的是**业务通用配置**，形态是「管理人员在后台维护，业务代码按 Key 读取」，不负责应用自身的启动配置、也不做实时推送。
 
 ## 核心模型
+
+```mermaid
+erDiagram
+    config_page ||--o{ config_group : "1:N"
+    config_group ||--o{ config_item : "1:N"
+```
+
+结构示例：
 
 ```
 Page（页面 / 业务域）        例：订单配置 ORDER
@@ -57,6 +67,8 @@ mvn install
 # 4. 启动（端口 8080）
 mvn -pl dog-config-web spring-boot:run
 ```
+
+> 完整 DDL 见 `dog-config-web/src/main/resources/db/schema.sql`（`config_page` / `config_group` / `config_item` 及索引、外键）；种子数据见同目录 `db/data.sql`。
 
 启动后：
 
@@ -120,9 +132,48 @@ value 空，defaultValue 非空     → 使用 defaultValue（DB 集中兜底）
 value 空，defaultValue 空       → 带参重载返回调用方传入参数；无参重载返回 null
 ```
 
+```mermaid
+flowchart TD
+    K["读取 Key"] --> V{"value 非空?"}
+    V -- 是 --> RV["返回 value"]
+    V -- 否 --> D{"defaultValue 非空?"}
+    D -- 是 --> RD["返回 defaultValue"]
+    D -- 否 --> P{"调用方传了兜底参数?"}
+    P -- 是 --> RP["返回调用方参数"]
+    P -- 否 --> N["返回 null"]
+```
+
 这条语义是业务依赖的稳定契约，不会随功能迭代改变。
 
+## 设计思想
+
+若只想搬走这套思路，记住以下几点即可（完整决策见 [`doc/design/design-decisions.md`](doc/design/design-decisions.md)）：
+
+- **三级模型，只有 Item 参与契约**：Page / Group 只负责组织与展示；业务访问的稳定契约是 Item 的 `key`。
+- **Key 即契约**：业务代码只认 key，配置怎么分组、怎么改名都不影响读取。
+- **字符串存储 + 类型解析**：`value` / `defaultValue` 一律按字符串存，读取时按 `valueType` 解析——一个列适应所有类型，DB 结构稳定。
+- **兜底链**：`value → defaultValue → 调用方参数 / null`，默认值集中在 DB 管理，调用方还能再兜一层。
+- **分层解耦**：契约在 `sdk`、实现在 `core`、HTTP 在 `web`，业务系统只依赖 `sdk` 即可类型化读取。
+- **软删除与业务态分离**：`deleted` 由框架维护（保留删除痕迹），`status`（ACTIVE / DISABLED）是业务开关。
+
 ## 模块结构
+
+```mermaid
+flowchart LR
+    Biz["业务系统"]
+    Admin["管理人员"]
+    Web["dog-config-web<br/>HTTP + 管理后台"]
+    Core["dog-config-core<br/>领域 + 数据访问"]
+    SDK["dog-config-sdk<br/>ConfigService 契约"]
+    DB[("MySQL")]
+
+    Biz -->|"HTTP /api/configs"| Web
+    Admin -->|"HTTP /api/pages·groups·items"| Web
+    Biz -.->|"Bean 注入"| SDK
+    Web --> Core
+    Core -.->|"实现"| SDK
+    Core --> DB
+```
 
 ```text
 dog-config/
@@ -135,25 +186,58 @@ dog-config/
 
 技术栈：Java 17 · Spring Boot 3.3.5 · MyBatis-Plus 3.5.7 · MySQL · 原生 HTML/JS。
 
+## 换数据库 / 魔改数据访问层
+
+持久化基于 MyBatis-Plus，业务逻辑与具体数据库无关。**要换库，只需动下面 5 处**：
+
+| # | 位置 | 要改什么 |
+| --- | --- | --- |
+| 1 | `dog-config-web/pom.xml` | 把 `com.mysql:mysql-connector-j` 换成目标库 JDBC 驱动 |
+| 2 | `dog-config-web/src/main/resources/application.yml` | `spring.datasource.url` 与 `driver-class-name` |
+| 3 | `db/schema.sql` | DDL 方言：`AUTO_INCREMENT`、`TINYINT(1)`、反引号（`` `key` `` / `` `value` ``）、`TEXT`、`DATETIME` |
+| 4 | `db/data.sql` | 种子方言：`INSERT IGNORE`、`NOW()` |
+| 5 | `dog-config-core/.../mapper/*Mapper.java` | 3 个 Mapper 内的自定义 SQL：反引号与 `LIMIT 1` |
+
+其余部分——实体、Mapper 接口、Service 逻辑、读取语义——**与数据库无关，无需改动**。
+
+排查方法：全局搜索**反引号**、`LIMIT`、`driver`、`AUTO_INCREMENT`，逐一按目标库方言替换。注意 `key` / `value` 是保留字（本仓库用反引号规避，换库需改成对应引用符）。
+
+细节与完整清单见 [`doc/design/database-design.md`](doc/design/database-design.md#7-换数据库魔改数据访问层)。
+
 ## 当前状态
 
 | 状态 | 内容 |
 | --- | --- |
 | ✅ 已完成 | v0.1 基础：Page/Group/Item CRUD 与启停、6 种值类型、6 种组件类型、options、读取 API（单条/批量/前缀）、类型化 SDK、管理后台、种子数据 |
-| 🚧 进行中 | `harden-config-writes`：写入值/选项/组件校验、软删感知的唯一性 409、父级删除保护 |
-| 🚧 进行中 | `config-item-versioning`：配置值版本记录、版本查询、回滚、软删恢复 |
+| ✅ 已完成 | `harden-config-writes`：写入值/选项/组件校验、必填约束、软删感知的唯一性 409、父级删除保护 |
+| ✅ 已完成 | `config-item-versioning`：配置值版本记录、版本查询、回滚、软删恢复 |
 
 进度以 `openspec/changes/` 为准（`openspec list` 可查看）。
 
 ## 路线图
 
-以下是 V1 暂未纳入、后续按需推进的能力：
+目标：让别人**一眼看懂它是什么、觉得有用，然后 fork 魔改或直接套用这套设计思想**。所以路线图围绕「看懂 → 跑起来 → 改得动」推进，而不是堆功能。
 
-- 缓存（减少配置读取对 DB 的压力）
-- 多租户与权限控制
-- 配置变更的实时推送 / Long Polling / MQ
-- 审批、灰度发布
-- 更多配置类型与校验规则
+### 已完成
+
+- 首屏可视化：整体架构图、Page → Group → Item 模型图、读取语义流水线（Mermaid，不用截图）
+- 说清「解决什么问题 / 不解决什么问题」，避免与 Nacos / Apollo 混淆
+- 「设计思想」摘要（链接 `doc/design/design-decisions.md`）
+- 「换数据库 / 魔改数据访问层」指南：5 处 touchpoint + 完整 DDL 与执行步骤
+
+### 下一步 — 读得懂、改得动
+
+- 关键代码路径标注扩展点；给出常见改造示例（换存储、加值类型等）作为参考
+
+### 之后 — 用得踏实
+
+- 基础 CI（构建 + 测试徽章）
+
+### 暂不纳入
+
+- 发布到 Maven 中央仓库、多租户、RBAC、审批、灰度、实时推送 / MQ
+- Docker Compose / H2 demo（改用「完整 DDL + 执行步骤 + 换数据库指引」）
+- 这些属于「产品化 / 便捷化」能力，谁需要谁在自己的 fork 里加
 
 ## 文档与规格
 
@@ -165,7 +249,7 @@ dog-config/
 | `openspec/changes/` | 进行中的变更（proposal / design / specs / tasks） |
 | `openspec/changes/archive/` | 已归档变更 |
 | `doc/product/v0.1/` | 业务通用配置管理系统需求规格说明书 v1.0 |
-| `specs/v0.1/` | 早期设计文档（迁移进 `openspec/` 后删除） |
+| `doc/design/` | 设计文档（数据库 / API / 模块结构 / 设计决策） |
 
 ## 开发与贡献
 

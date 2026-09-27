@@ -99,7 +99,7 @@ POST /api/items/{id}/restore
 
 ## Migration Plan
 
-- 新增 `config_item_version` 表，使用 `CREATE TABLE IF NOT EXISTS`，与 `db/schema.sql` 同步；另同步 `specs/v0.1/database-design.md`。
+- 新增 `config_item_version` 表，使用 `CREATE TABLE IF NOT EXISTS`，与 `db/schema.sql` 同步；另同步 `doc/design/database-design.md`。
 - 回滚策略：删表即可回退 schema；应用回退到旧包后该表不被引用。
 - 存量数据：提供可选回填脚本，为现有 `config_item` 各插入一条基于当前值的 CREATE 版本；不阻塞发布。
 

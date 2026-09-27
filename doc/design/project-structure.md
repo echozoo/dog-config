@@ -1,8 +1,7 @@
 # 模块结构 — Business Config v0.1
 
-> 对应规格：`specs/v0.1/domain-model.md`、`specs/v0.1/api-design.md`
+> 对应领域规格：`openspec/specs/config-model/spec.md`
 > 本文件定义 Maven 多模块结构、模块职责与依赖方向（Design 层，How）。
-> 层说明：Spec 层见 `specs/v0.1/domain-model.md`；索引见 `specs/v0.1/README.md`。
 
 ## 1. 总览
 
@@ -73,5 +72,5 @@ com.echozoo.config
 
 ## 6. 关联
 
-- 领域模型：`specs/v0.1/domain-model.md`
-- API 设计：`specs/v0.1/api-design.md`
+- 领域规格：`openspec/specs/config-model/spec.md`
+- API 设计：`doc/design/api-design.md`

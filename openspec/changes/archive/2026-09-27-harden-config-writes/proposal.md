@@ -25,4 +25,4 @@ v0.1 的写路径不校验配置值：非法值（如把 `abc` 写进 INTEGER）
 - `dog-config-web`：`ConfigAdminService` 写入逻辑接入校验；DTO 校验与错误码（400/409）补充。
 - 数据库：无 schema 变更。
 - 读路径与 SDK 契约：无变更。
-- 既有文档：`specs/v0.1/domain-model.md` §4 值解析语义需在实现后同步说明校验侧约束。
+- 既有文档：`openspec/specs/config-read-api/spec.md` 的读取解析语义需在实现后同步说明校验侧约束。

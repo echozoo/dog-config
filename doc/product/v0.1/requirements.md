@@ -50,5 +50,5 @@ value 空，defaultValue 空  → 带参重载返回调用方传入参数；无�
 
 ## 5. 关联
 
-- Spec 层：`specs/v0.1/domain-model.md`
-- 流程索引：`specs/v0.1/README.md`
+- 项目规格：`openspec/specs/`
+- 设计文档：`doc/design/`

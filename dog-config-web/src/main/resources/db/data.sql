@@ -1,5 +1,5 @@
 -- 种子数据：订单配置 / 商品配置 / 物流配置
--- 对应规格：specs/v0.1/database-design.md §5
+-- 对应设计：doc/design/database-design.md §5
 
 INSERT IGNORE INTO config_page (id, code, name, description, status, sort, created_at, updated_at) VALUES
 (1, 'ORDER', '订单配置', '订单相关业务配置', 'ACTIVE', 1, NOW(), NOW()),
